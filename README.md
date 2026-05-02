@@ -47,6 +47,17 @@ Run a **local** assistant on your machine: chat in the terminal, **no API keys**
 - `--model <name>` — Ollama model tag (default: `qwen2.5:3b` or `JARVIS_MODEL`).
 - `--multi-agent` — Router + analyst/writer-style replies (uses extra inference when delegating).
 - `--memory /path/to/file.db` — Custom SQLite path (default: `~/.jarvis/memory.db`).
+- `--workspace DIR` — **Sandbox** for file tools: the model can only list/read/create `.md` files under this directory (default: **current working directory**). Use `cd /chemin/vers/P_Zed` before launching, or pass `--workspace "/Users/you/Maison/P_Zed"`.
+- `--no-file-tools` — Disable workspace tools (chat only).
+
+### Workspace files (sandbox)
+
+With **Ollama tool calling** enabled (default), the assistant can:
+
+- **List** and **read** text files under the workspace root (paths must be **relative**; `..` and absolute paths are rejected).
+- **Create or overwrite** files only if the path ends with **`.md`**.
+
+Nothing outside the chosen workspace root is accessible from tools.
 
 ### Environment (optional)
 
@@ -58,6 +69,8 @@ export JARVIS_MODEL=qwen2.5:3b
 export JARVIS_SUMMARY_MODEL=qwen2.5:3b   # optional; defaults to JARVIS_MODEL
 export JARVIS_MULTI_AGENT=false
 export JARVIS_SUMMARY_EVERY=8              # messages before rolling summary refresh
+export JARVIS_WORKSPACE_ROOT=/Users/you/Maison/P_Zed   # optional; default is cwd
+export JARVIS_WORKSPACE_TOOLS=true          # set false to disable file tools
 ```
 
 ### REPL commands

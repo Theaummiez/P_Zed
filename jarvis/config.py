@@ -6,6 +6,10 @@ from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
+def _default_workspace_root() -> Path:
+    return Path.cwd()
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_prefix="JARVIS_",
@@ -31,6 +35,15 @@ class Settings(BaseSettings):
         ge=2,
         description="After this many new messages, refresh the rolling summary",
     )
+    workspace_root: Path = Field(
+        default_factory=_default_workspace_root,
+        description="Sandbox root: only files under this path are readable/writable",
+    )
+    workspace_tools: bool = Field(
+        default=True,
+        description="Expose list/read/write-.md tools to the model (Ollama tool calling)",
+    )
+    tool_rounds_max: int = Field(default=16, ge=1, le=32, description="Max tool-call iterations per message")
 
 
 def get_settings() -> Settings:

@@ -37,6 +37,17 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument("--memory", default=None, help="SQLite path for persistent memory")
     p.add_argument("--no-memory", action="store_true", help="Disable loading prior summary only display")
+    p.add_argument(
+        "--workspace",
+        default=None,
+        metavar="DIR",
+        help="Sandbox root for file tools (default: current directory or JARVIS_WORKSPACE_ROOT)",
+    )
+    p.add_argument(
+        "--no-file-tools",
+        action="store_true",
+        help="Disable workspace list/read/write tools for this session",
+    )
     return p
 
 
@@ -64,12 +75,23 @@ async def async_main() -> None:
         settings.multi_agent = True
     if args.memory:
         settings.memory_path = Path(args.memory)
+    if args.workspace:
+        settings.workspace_root = Path(args.workspace).expanduser().resolve()
+    if args.no_file_tools:
+        settings.workspace_tools = False
 
     await _ensure_model(settings.ollama_host, settings.model)
 
     title = f"Jarvis (local) — model [bold]{settings.model}[/bold]"
     if settings.multi_agent:
         title += " — [cyan]multi-agent[/cyan]"
+    try:
+        ws = settings.workspace_root.resolve()
+    except OSError:
+        ws = settings.workspace_root
+    title += f"\n[dim]Workspace:[/dim] {ws}"
+    if settings.workspace_tools:
+        title += " [dim](file tools on)[/dim]"
     console.print(Panel.fit(title, border_style="green"))
 
     state = load_state(settings.memory_path, settings.recent_turns)
