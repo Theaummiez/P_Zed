@@ -59,6 +59,10 @@ With **Ollama tool calling** enabled (default), the assistant can:
 
 Nothing outside the chosen workspace root is accessible from tools.
 
+### `Docs/` folder
+
+The repository includes a **`Docs/`** directory for notes and documents the assistant creates. It should **prefer paths under `Docs/`** (e.g. `Docs/notes/idea.md`). Any subfolders in the path are created automatically when writing a `.md` file.
+
 If `jarvis` fails with `ModuleNotFoundError: No module named 'jarvis'` after `pip install -e .`, upgrade the install (build backend was switched to Hatchling for reliable editable installs):
 
 ```bash
