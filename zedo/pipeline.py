@@ -21,6 +21,7 @@ from zedo.skills import load_skills_markdown
 from zedo.workspace import (
     ALLOWED_WRITE_EXTENSIONS,
     OLLAMA_TOOLS,
+    list_workspace,
     normalize_workspace_relative,
     run_tool,
     write_workspace_file,
@@ -44,13 +45,15 @@ If the user speaks another language, reply in that language."""
 
 FILE_TOOLS_HINT = """You have tools to access files ONLY inside the workspace folder (project root). You cannot read or write outside it.
 
-CRITICAL: To create a file you MUST use the workspace tools (native tool_calls). Writing prose or JSON-looking examples in your answer does NOT create files unless the tools actually run.
+ANTI-HALLUCINATION: Never invent directory trees, file names, or delete results. If listing folders or confirming contents, you MUST call workspace_list first and base your answer ONLY on the JSON tool results. If deleting a file, you MUST call workspace_delete_file and report its JSON result.
 
-Do NOT claim a file was created until tools have run successfully.
+CRITICAL: To create a file you MUST use workspace_write_file (native tool_calls). Writing prose or JSON-looking examples in your answer does NOT create files unless the tools actually run.
 
-Use workspace_write_file to create files. Allowed types: .md .txt .html .csv .tsv .json .xml .css .docx .pdf (plain text body; PDF/DOCX are generated from text). Prefer Docs/ for user documents (e.g. Docs/export/page.html, Docs/data/posts.csv).
+Do NOT claim a file was created, deleted, or listed until tools have run successfully.
 
-When listing, use relative_path \"\" for project root or \"Docs\" for the docs area."""
+Use workspace_write_file for allowed types: .md .txt .html .htm .csv .tsv .json .xml .css .docx .pdf . Use workspace_delete_file to remove a file the user asks to delete.
+
+When listing, use relative_path \"\" for project root or \"Docs\" for the docs area; use recursive:true for full tree when asked \"everything under\"."""
 
 
 ANALYST_SYSTEM = """You are an analytical sub-agent. Break down problems, consider edge cases, and give structured reasoning.
@@ -61,9 +64,9 @@ WRITER_SYSTEM = """You are a writing sub-agent. Produce clear, well-organized te
 CLASSIFIER_SYSTEM = """You route user requests. Reply with JSON only, no markdown:
 {"delegate":"none"|"analyst"|"writer","reason":"short"}
 Use analyst for math, debugging, multi-step logic, or careful analysis.
-Use writer for long-form drafting, emails, documentation.
+Use writer for long-form drafting, emails, documentation, or creating/saving files in the workspace.
 Use none for chit-chat, facts, or short answers.
-Use writer when the user asks to create or save a file or document in the workspace."""
+Use analyst when the user asks to delete files, list folders, or verify filesystem contents."""
 
 
 def _user_intends_workspace_write(user_text: str) -> bool:
@@ -188,6 +191,49 @@ def _fallback_write_if_needed(
     return assistant_reply + banner, [rel]
 
 
+def _maybe_inject_list_dir_hint(settings: Settings, user_text: str) -> str | None:
+    """Pre-fetch disk listing when user asks what's in a folder (reduces tree hallucination)."""
+    if not settings.workspace_tools:
+        return None
+    t = user_text.lower()
+    if not any(
+        x in t
+        for x in (
+            "que contient",
+            "qu'y a",
+            "qu il y a",
+            "qu'il y a",
+            "lire",
+            "voir ce",
+            "montre",
+            "liste",
+            "list ",
+            "ls ",
+            "dossier",
+            "répertoire",
+            "repertoire",
+            "arborescence",
+            "tree",
+            "fichiers dans",
+            "contenu de",
+        )
+    ):
+        return None
+    if not any(x in t for x in ("docs", "docs/", "workspace", "projet", "racine", "folder")):
+        return None
+    rel = ""
+    if "racine" in t or "workspace" in t or "projet" in t or "p_zed" in t:
+        rel = ""
+    elif re.search(r"(?i)\bdocs\b", t):
+        rel = "Docs"
+    root = settings.workspace_root
+    snap = list_workspace(root, rel, recursive=True)
+    return (
+        "[SYSTEM — live disk listing; use ONLY this JSON for folder contents, do not invent files]\n"
+        + snap
+    )
+
+
 def _workspace_root_line(settings: Settings) -> str:
     try:
         root = settings.workspace_root.resolve()
@@ -197,7 +243,13 @@ def _workspace_root_line(settings: Settings) -> str:
 
 
 KNOWN_WORKSPACE_TOOLS = frozenset(
-    {"workspace_list", "workspace_read_file", "workspace_write_file", "workspace_write_markdown"}
+    {
+        "workspace_list",
+        "workspace_read_file",
+        "workspace_write_file",
+        "workspace_write_markdown",
+        "workspace_delete_file",
+    }
 )
 
 
@@ -394,6 +446,9 @@ async def _maybe_delegate(
     ]
     if skills_block:
         specialist_messages.insert(1, {"role": "system", "content": skills_block})
+    list_hint = _maybe_inject_list_dir_hint(settings, user_text)
+    if list_hint:
+        specialist_messages.insert(3 if skills_block else 2, {"role": "system", "content": list_hint})
     text, wrote = await run_agent_with_tools(
         settings,
         specialist_messages,
@@ -462,6 +517,9 @@ async def run_turn(
             {"role": "system", "content": _workspace_root_line(settings)},
             {"role": "system", "content": FILE_TOOLS_HINT},
         ]
+        list_hint = _maybe_inject_list_dir_hint(settings, user_text)
+        if list_hint:
+            messages_list.insert(3, {"role": "system", "content": list_hint})
         if skills_block:
             messages_list.insert(1, {"role": "system", "content": skills_block})
         if state.summary:

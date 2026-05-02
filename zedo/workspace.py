@@ -248,7 +248,41 @@ def write_workspace_markdown(root: Path, relative_path: str, content: str) -> st
     return write_workspace_file(root, relative_path, content)
 
 
+def delete_workspace_file(root: Path, relative_path: str) -> str:
+    """Delete a single file under the sandbox (not directories)."""
+    rel_norm = normalize_workspace_relative(relative_path)
+    path = resolve_under_root(root, rel_norm)
+    if not path.exists():
+        return json.dumps({"error": "not found", "path": relative_path})
+    if not path.is_file():
+        return json.dumps(
+            {"error": "path is not a file (use empty dir cleanup manually)", "path": relative_path}
+        )
+    try:
+        path.unlink()
+    except OSError as e:
+        return json.dumps({"error": str(e), "path": relative_path})
+    return json.dumps({"ok": True, "deleted": True, "path": rel_norm})
+
+
 OLLAMA_TOOLS: list[dict] = [
+    {
+        "type": "function",
+        "function": {
+            "name": "workspace_delete_file",
+            "description": "Delete one file under the workspace (files only, not directories). Required for any delete/remove request.",
+            "parameters": {
+                "type": "object",
+                "required": ["relative_path"],
+                "properties": {
+                    "relative_path": {
+                        "type": "string",
+                        "description": "File path relative to workspace root (e.g. Docs/sport/old.docx).",
+                    },
+                },
+            },
+        },
+    },
     {
         "type": "function",
         "function": {
@@ -337,6 +371,11 @@ def run_tool(root: Path, name: str, arguments: dict | str | None) -> str:
             if not rp:
                 return json.dumps({"error": "missing relative_path"})
             return write_workspace_file(root, str(rp), str(content))
+        if name == "workspace_delete_file":
+            rp = args.get("relative_path") or args.get("path")
+            if not rp:
+                return json.dumps({"error": "missing relative_path"})
+            return delete_workspace_file(root, str(rp))
     except WorkspaceError as e:
         return json.dumps({"error": str(e)})
     return json.dumps({"error": f"unknown tool {name}"})
