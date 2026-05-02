@@ -61,7 +61,9 @@ Nothing outside the chosen workspace root is accessible from tools.
 
 ### `Docs/` folder
 
-The repository includes a **`Docs/`** directory for notes and documents the assistant creates. It should **prefer paths under `Docs/`** (e.g. `Docs/notes/idea.md`). Any subfolders in the path are created automatically when writing a `.md` file.
+The repository includes a **`Docs/`** directory for notes and documents the assistant creates. It should **prefer paths under `Docs/`** (e.g. `Docs/notes/idea.md`). Any subfolders in the path are created automatically when writing a `.md` file. On case-sensitive filesystems, `docs/...` in a path is normalized to `Docs/...` so it matches the folder in the repo.
+
+If the model **prints JSON** instead of using native Ollama tools, **jarvis 0.1.3+** can still **execute** `workspace_write_markdown` / `workspace_list` / `workspace_read_file` calls found in the reply text.
 
 If `jarvis` fails with `ModuleNotFoundError: No module named 'jarvis'` after `pip install -e .`, upgrade the install (build backend was switched to Hatchling for reliable editable installs):
 
