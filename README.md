@@ -7,7 +7,7 @@ Run a **local** assistant on your machine: chat in the terminal, **no API keys**
 | Piece | Role |
 |--------|------|
 | **Ollama** | Standard local runner; pulls quantized GGUF models; uses GPU when available. |
-| **Small instruct models** | `qwen2.5:3b`, `phi3:mini`, `llama3.2:3b` — strong quality per GB RAM; good default for daily Q&A. |
+| **Small instruct models** | `qwen2.5:7b` (default), `qwen2.5:3b`, `phi3:mini`, `llama3.2:3b` — trade quality vs RAM. |
 | **Quantization** | Models are already 4-bit (typical); fewer bits → less VRAM/RAM. |
 | **Rolling summary** | Long-term “memory” without sending full history every time — fewer tokens per turn. |
 
@@ -20,10 +20,10 @@ Run a **local** assistant on your machine: chat in the terminal, **no API keys**
 2. **Pull a small model** (pick one that fits your RAM/VRAM):
 
    ```bash
-   ollama pull qwen2.5:3b
+   ollama pull qwen2.5:7b
    ```
 
-   Alternatives: `phi3:mini`, `llama3.2:3b`, `gemma2:2b`.
+   Lighter option: `qwen2.5:3b`. Alternatives: `phi3:mini`, `llama3.2:3b`, `gemma2:2b`.
 
 3. **Install this project**:
 
@@ -44,7 +44,7 @@ Run a **local** assistant on your machine: chat in the terminal, **no API keys**
 
 ### Options
 
-- `--model <name>` — Ollama model tag (default: `qwen2.5:3b` or `JARVIS_MODEL`).
+- `--model <name>` — Ollama model tag (default: `qwen2.5:7b` or `JARVIS_MODEL`).
 - `--multi-agent` — Router + analyst/writer-style replies (uses extra inference when delegating).
 - `--memory /path/to/file.db` — Custom SQLite path (default: `~/.jarvis/memory.db`).
 - `--workspace DIR` — **Sandbox** for file tools: the model can only list/read/create `.md` files under this directory (default: **current working directory**). Use `cd /chemin/vers/P_Zed` before launching, or pass `--workspace "/Users/you/Maison/P_Zed"`.
@@ -80,8 +80,8 @@ Copy and edit:
 
 ```bash
 export JARVIS_OLLAMA_HOST=http://127.0.0.1:11434
-export JARVIS_MODEL=qwen2.5:3b
-export JARVIS_SUMMARY_MODEL=qwen2.5:3b   # optional; defaults to JARVIS_MODEL
+export JARVIS_MODEL=qwen2.5:7b
+export JARVIS_SUMMARY_MODEL=qwen2.5:7b   # optional; defaults to JARVIS_MODEL
 export JARVIS_MULTI_AGENT=false
 export JARVIS_SUMMARY_EVERY=8              # messages before rolling summary refresh
 export JARVIS_WORKSPACE_ROOT=/Users/you/Maison/P_Zed   # optional; default is cwd

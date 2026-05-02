@@ -28,7 +28,7 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--model",
         default=os.environ.get("JARVIS_MODEL"),
-        help="Ollama model name (default: env JARVIS_MODEL or qwen2.5:3b)",
+        help="Ollama model name (default: env JARVIS_MODEL or qwen2.5:7b)",
     )
     p.add_argument(
         "--multi-agent",

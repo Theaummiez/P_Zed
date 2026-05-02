@@ -20,7 +20,7 @@ class Settings(BaseSettings):
 
     ollama_host: str = Field(default="http://127.0.0.1:11434", description="Ollama API base URL")
     model: str = Field(
-        default="qwen2.5:3b",
+        default="qwen2.5:7b",
         description="Default model (use small instruct models for efficiency)",
     )
     summary_model: str | None = Field(
