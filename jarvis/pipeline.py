@@ -25,8 +25,9 @@ You run on the user's machine; be practical about limits and suggest concrete st
 If the user speaks another language, reply in that language."""
 
 FILE_TOOLS_HINT = """You have tools to access files ONLY inside the workspace folder (project root). You cannot read or write outside it.
-Use paths relative to that root (e.g. docs/note.md). To create notes, use workspace_write_markdown with a path ending in .md .
-When listing, start from relative_path \"\" for the project root."""
+Use paths relative to that root. For new notes and documents you create, put them under the Docs/ folder (e.g. Docs/notes/idea.md). You may use any subfolders under Docs/ you want; parent folders are created automatically when you write a .md file.
+To create or overwrite a file, use workspace_write_markdown with a path ending in .md .
+When listing the project, start from relative_path \"\" for the root, or \"Docs\" for your document area."""
 
 
 ANALYST_SYSTEM = """You are an analytical sub-agent. Break down problems, consider edge cases, and give structured reasoning.

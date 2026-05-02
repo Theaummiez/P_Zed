@@ -157,7 +157,7 @@ OLLAMA_TOOLS: list[dict] = [
         "type": "function",
         "function": {
             "name": "workspace_write_markdown",
-            "description": "Create or overwrite a Markdown (.md) file under the workspace only.",
+            "description": "Create or overwrite a Markdown (.md) file under the workspace. Prefer paths under Docs/ for notes you create (e.g. Docs/meeting-notes.md or Docs/2026/jan/plan.md); intermediate folders are created automatically.",
             "parameters": {
                 "type": "object",
                 "required": ["relative_path", "content"],
