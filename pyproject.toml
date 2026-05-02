@@ -1,7 +1,7 @@
 [project]
-name = "jarvis-local"
-version = "0.1.7"
-description = "Local terminal assistant with Ollama, SQLite memory, optional multi-agent mode"
+name = "zedo-local"
+version = "0.2.0"
+description = "Zedo — local terminal assistant with Ollama, SQLite memory, Skills, optional multi-agent mode"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
@@ -15,12 +15,12 @@ dependencies = [
 ]
 
 [project.scripts]
-jarvis = "jarvis.cli:main"
+zedo = "zedo.cli:main"
+jarvis = "zedo.cli:main"
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
-# Ship only the `jarvis` package (flat layout at repo root).
 [tool.hatch.build.targets.wheel]
-packages = ["jarvis"]
+packages = ["zedo"]

@@ -6,8 +6,8 @@ import json
 import re
 from typing import Any
 
-from jarvis.config import Settings
-from jarvis.memory import (
+from zedo.config import Settings
+from zedo.memory import (
     MemoryState,
     append_message,
     export_recent_for_summary,
@@ -16,9 +16,9 @@ from jarvis.memory import (
     parse_summary_json,
     set_summary,
 )
-from jarvis.ollama import chat, chat_message
-from jarvis.skills import load_skills_markdown
-from jarvis.workspace import (
+from zedo.ollama import chat, chat_message
+from zedo.skills import load_skills_markdown
+from zedo.workspace import (
     ALLOWED_WRITE_EXTENSIONS,
     OLLAMA_TOOLS,
     normalize_workspace_relative,
@@ -38,7 +38,7 @@ def _skills_system_message(settings: Settings, user_text: str) -> str | None:
     return text.strip() if text.strip() else None
 
 
-COORDINATOR_SYSTEM = """You are a local AI assistant (Jarvis-style): precise, helpful, concise unless asked for depth.
+COORDINATOR_SYSTEM = """You are Zedo, a local AI assistant: precise, helpful, concise unless asked for depth.
 You run on the user's machine; be practical about limits and suggest concrete steps.
 If the user speaks another language, reply in that language."""
 
@@ -342,7 +342,7 @@ async def run_agent_with_tools(
                     pass
             working.append({"role": "tool", "tool_name": name, "content": result})
 
-    return "Stopped: too many tool rounds (increase JARVIS_TOOL_ROUNDS_MAX if needed).", wrote_file_tool
+    return "Stopped: too many tool rounds (increase ZEDO_TOOL_ROUNDS_MAX if needed).", wrote_file_tool
 
 
 async def _maybe_delegate(

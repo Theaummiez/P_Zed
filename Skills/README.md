@@ -1,19 +1,19 @@
-# Skills (instructions pour Jarvis)
+# Skills (instructions pour Zedo)
 
-Les fichiers **`.md`** dans ce dossier sont chargés comme **règles système** additionnelles — même idée que les instructions projet dans Cursor ou les « skills » dans d’autres assistants.
+Les fichiers **`.md`** dans ce dossier sont chargés comme **règles système** additionnelles — même idée que les instructions projet dans Cursor.
 
 ## Emplacement
 
-- Dossier par défaut : **`Skills/`** à la racine du workspace (à côté de `jarvis/`, `Docs/`).
-- Tu peux renommer via la variable d’environnement **`JARVIS_SKILLS_DIR`**.
+- Par défaut : **`Skills/`** à la racine du workspace (à côté de `zedo/` dans le dépôt, ou à la racine du projet sur ta machine).
+- Renommage : variable **`ZEDO_SKILLS_DIR`**.
 
-## Format d’un fichier
+## Format
 
 ### Sans en-tête
 
-Tout le fichier est injecté **à chaque message** (utile pour des règles globales).
+Tout le fichier peut être injecté selon les règles de filtrage (`keywords` / `always`).
 
-### Avec en-tête YAML simple (entre `---`)
+### En-tête YAML (entre `---`)
 
 ```markdown
 ---
@@ -23,20 +23,23 @@ keywords: sport, séance, fichier, docs
 ---
 
 - Toujours enregistrer les séances sous `Docs/Sport/`.
-- Utiliser `workspace_write_file` avec un chemin explicite en `.md`.
 ```
 
 | Champ | Rôle |
 |--------|------|
-| `title` | Titre affiché dans le bloc injecté (optionnel). |
-| `always: true` | Skill **toujours** chargée (ignore `keywords`). |
-| `keywords` | Liste séparée par virgules ; la skill s’applique si **au moins** un mot apparaît dans le message utilisateur (insensible à la casse). |
+| `title` | Titre du bloc injecté (optionnel). |
+| `always: true` | Toujours chargée. |
+| `keywords` | Chargée si un mot apparaît dans ton message (virgules). |
 
-Sans `keywords` ni `always: true`, le fichier est traité comme **toujours actif** (comportement simple pour une seule grosse règle).
+Sans `keywords` ni `always: true` → traitée comme **toujours active** (comportement simple).
 
 ## Limites
 
-- Texte tronqué par fichier (~12k caractères) et au total par message (`JARVIS_SKILLS_MAX_CHARS`, défaut 16000).
-- Désactiver : **`JARVIS_SKILLS_ENABLED=false`** ou l’option CLI **`--no-skills`**.
+- Troncature par fichier (~12k caractères) et au total (`ZEDO_SKILLS_MAX_CHARS`, défaut 16000).
+- Désactiver : **`ZEDO_SKILLS_ENABLED=false`** ou **`zedo --no-skills`**.
 
-Les skills **ne réentraînent pas** le modèle : elles ajoutent du contexte pour réduire les erreurs sur les sujets que tu décris explicitement.
+Les skills **n’entraînent pas** le modèle : elles ajoutent du contexte pour réduire les erreurs sur ce que tu décris.
+
+## Prompts importés (awesome-prompts)
+
+Voir **`Skills/github-awesome-prompts/README.md`** pour les fichiers copiés depuis [ai-boost/awesome-prompts](https://github.com/ai-boost/awesome-prompts).

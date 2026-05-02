@@ -111,7 +111,7 @@ def load_skills_markdown(
     for rel_path, block in chunks:
         piece = f"<!-- {rel_path} -->\n{block}\n\n"
         if total + len(piece) > max_total_chars:
-            out_parts.append("\n… [more skills omitted: raise JARVIS_SKILLS_MAX_TOTAL_CHARS]\n")
+            out_parts.append("\n… [more skills omitted: raise ZEDO_SKILLS_MAX_CHARS]\n")
             break
         out_parts.append(piece)
         total += len(piece)

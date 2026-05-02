@@ -5,7 +5,7 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
-from jarvis.project_root import discover_project_root
+from zedo.project_root import discover_project_root
 
 
 def _default_workspace_root() -> Path:
@@ -14,7 +14,7 @@ def _default_workspace_root() -> Path:
 
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
-        env_prefix="JARVIS_",
+        env_prefix="ZEDO_",
         env_file=".env",
         env_file_encoding="utf-8",
         extra="ignore",
@@ -30,7 +30,7 @@ class Settings(BaseSettings):
         description="If set, use this model for memory summaries (defaults to same as model)",
     )
     multi_agent: bool = Field(default=False, description="Enable coordinator + specialist agents")
-    memory_path: Path = Field(default_factory=lambda: Path.home() / ".jarvis" / "memory.db")
+    memory_path: Path = Field(default_factory=lambda: Path.home() / ".zedo" / "memory.db")
     recent_turns: int = Field(default=12, ge=2, le=50, description="User/assistant pairs to load")
     summary_every: int = Field(
         default=8,

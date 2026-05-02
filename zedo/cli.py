@@ -12,11 +12,11 @@ from rich.markdown import Markdown
 from rich.panel import Panel
 from rich.prompt import Prompt
 
-from jarvis.config import get_settings
-from jarvis.memory import load_state, messages_since_last_summary
-from jarvis.ollama import OllamaError, list_models
-from jarvis.pipeline import run_turn
-from jarvis.project_root import discover_project_root, is_jarvis_project_root
+from zedo.config import get_settings
+from zedo.memory import load_state, messages_since_last_summary
+from zedo.ollama import OllamaError, list_models
+from zedo.pipeline import run_turn
+from zedo.project_root import discover_project_root, is_zedo_project_root
 
 
 console = Console()
@@ -24,12 +24,12 @@ console = Console()
 
 def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="Local Jarvis-style assistant via Ollama (terminal, memory, optional multi-agent).",
+        description="Zedo — local assistant via Ollama (terminal, memory, Skills, optional multi-agent).",
     )
     p.add_argument(
         "--model",
-        default=os.environ.get("JARVIS_MODEL"),
-        help="Ollama model name (default: env JARVIS_MODEL or qwen2.5:7b)",
+        default=os.environ.get("ZEDO_MODEL") or os.environ.get("JARVIS_MODEL"),
+        help="Ollama model name (default: env ZEDO_MODEL or qwen2.5:7b; JARVIS_MODEL still accepted)",
     )
     p.add_argument(
         "--multi-agent",
@@ -42,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--workspace",
         default=None,
         metavar="DIR",
-        help="Sandbox root for file tools (default: current directory or JARVIS_WORKSPACE_ROOT)",
+        help="Sandbox root for file tools (default: current directory or ZEDO_WORKSPACE_ROOT)",
     )
     p.add_argument(
         "--no-file-tools",
@@ -84,12 +84,12 @@ async def async_main() -> None:
     if args.workspace:
         settings.workspace_root = Path(args.workspace).expanduser().resolve()
 
-    if settings.workspace_tools and not is_jarvis_project_root(settings.workspace_root):
+    if settings.workspace_tools and not is_zedo_project_root(settings.workspace_root):
         console.print(
             "[yellow]Warning:[/yellow] workspace does not look like this repo "
-            "(missing jarvis/ + pyproject.toml). File tools may write elsewhere than you expect. "
-            "Run [bold]jarvis[/bold] from inside [bold]P_Zed[/bold], or set "
-            "[bold]JARVIS_WORKSPACE_ROOT[/bold] / [bold]--workspace[/bold] to your clone path "
+            "(missing zedo/ + pyproject.toml). File tools may write elsewhere than you expect. "
+            "Run [bold]zedo[/bold] from inside [bold]P_Zed[/bold], or set "
+            "[bold]ZEDO_WORKSPACE_ROOT[/bold] / [bold]--workspace[/bold] to your clone path "
             "(e.g. [dim]~/Documents/Maison/P_Zed[/dim])."
         )
     if args.no_skills:
@@ -97,7 +97,7 @@ async def async_main() -> None:
 
     await _ensure_model(settings.ollama_host, settings.model)
 
-    title = f"Jarvis (local) — model [bold]{settings.model}[/bold]"
+    title = f"Zedo (local) — model [bold]{settings.model}[/bold]"
     if settings.multi_agent:
         title += " — [cyan]multi-agent[/cyan]"
     try:

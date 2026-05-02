@@ -1,138 +1,91 @@
-# Local Jarvis-style assistant (terminal)
+# Zedo — assistant local (terminal)
 
-Run a **local** assistant on your machine: chat in the terminal, **no API keys**, no rate limits. It uses **[Ollama](https://ollama.com)** for inference (efficient Llama.cpp-based runtime, Metal/CUDA/CPU), **SQLite** for memory, and an optional **multi-agent** mode that routes work to specialist prompts (same small model; extra calls only when useful).
+**Zedo** tourne sur ta machine : discussion dans le terminal, **sans API cloud**, pas de quota. Il utilise **[Ollama](https://ollama.com)** pour l’inférence, **SQLite** pour la mémoire, des **Skills** Markdown (comme des instructions projet), et un mode **multi-agent** optionnel.
 
-## Why this stack (efficiency)
+> **Ancien nom : Jarvis.** La commande `jarvis` reste un alias de `zedo` après installation ; le paquet Python est désormais **`zedo`** (`pip install` → `zedo-local`).
 
-| Piece | Role |
-|--------|------|
-| **Ollama** | Standard local runner; pulls quantized GGUF models; uses GPU when available. |
-| **Small instruct models** | `qwen2.5:7b` (default), `qwen2.5:3b`, `phi3:mini`, `llama3.2:3b` — trade quality vs RAM. |
-| **Quantization** | Models are already 4-bit (typical); fewer bits → less VRAM/RAM. |
-| **Rolling summary** | Long-term “memory” without sending full history every time — fewer tokens per turn. |
+## Pourquoi cette stack
 
-“Gets better each time you talk” here means **persistent memory**: preferences and facts accumulate in a rolling summary plus recent turns, so later sessions stay coherent (not automatic self-training of the weights).
+| Élément | Rôle |
+|---------|------|
+| **Ollama** | Runtime local standard ; modèles quantifiés ; GPU si dispo. |
+| **Petits modèles instruct** | `qwen2.5:7b` (défaut), etc. — compromis qualité / RAM. |
+| **Résumé glissant** | Mémoire long terme sans renvoyer tout l’historique à chaque tour. |
 
-## Setup
+## Installation
 
-1. **Install Ollama** from https://ollama.com and start it (`ollama serve` if needed).
+1. **Ollama** : https://ollama.com — `ollama pull qwen2.5:7b` (ou autre modèle).
 
-2. **Pull a small model** (pick one that fits your RAM/VRAM):
-
-   ```bash
-   ollama pull qwen2.5:7b
-   ```
-
-   Lighter option: `qwen2.5:3b`. Alternatives: `phi3:mini`, `llama3.2:3b`, `gemma2:2b`.
-
-3. **Install this project**:
+2. **Projet** :
 
    ```bash
    cd /path/to/P_Zed
    python -m venv .venv
-   source .venv/bin/activate   # Windows: .venv\Scripts\activate
+   source .venv/bin/activate
    pip install -e .
    ```
 
-4. **Run**:
+3. **Lancer** :
 
    ```bash
+   zedo
+   # ou (alias)
    jarvis
-   # or
-   python -m jarvis.cli
+   # ou
+   python -m zedo.cli
    ```
 
-### Skills (custom instructions, Cursor-style)
+### Skills (instructions perso, style Cursor)
 
-Add **`Skills/*.md`** under your **workspace root** (same folder as `Docs/`). Each file can hold rules, checklists, or tone. Content is injected into the **system** context so the model follows it like project instructions.
+Ajoute des **`Skills/*.md`** sous la **racine workspace** (comme `Docs/`). Contenu injecté dans le contexte système.
 
-- Optional YAML frontmatter:
+- Frontmatter optionnel : `title`, `always: true|false`, `keywords: mot1, mot2`.
+- Désactiver : `--no-skills` ou `ZEDO_SKILLS_ENABLED=false`.
+- Dossier : `ZEDO_SKILLS_DIR` (défaut `Skills`), taille max `ZEDO_SKILLS_MAX_CHARS`.
 
-```markdown
----
-title: Mes règles sport
-always: false
-keywords: sport, séance, cardio
----
+Des prompts issus de **[awesome-prompts](https://github.com/ai-boost/awesome-prompts)** sont fournis sous **`Skills/github-awesome-prompts/`** (voir le `README.md` dans ce dossier pour les sources et la licence upstream).
 
-- Toujours créer les fichiers sous `Docs/Sport/` …
-```
+### Options CLI
 
-- **`keywords`**: skill loaded only when the user message contains one of these words (comma-separated).
-- **`always: true`**: always loaded.
-- No frontmatter: treated as **always on** (simple global skill).
+- `--model` — Modèle Ollama (`ZEDO_MODEL` ou ancien `JARVIS_MODEL`).
+- `--multi-agent` — Routeur analyste / rédacteur.
+- `--memory` — Chemin SQLite perso (défaut `~/.zedo/memory.db`).
+- `--workspace` — Racine du bac à sable fichiers (`ZEDO_WORKSPACE_ROOT`).
+- `--no-skills` / `--no-file-tools`
 
-Disable with **`--no-skills`** or `export JARVIS_SKILLS_ENABLED=false`. Tune size with `JARVIS_SKILLS_MAX_CHARS` (default 16000). Folder name: `JARVIS_SKILLS_DIR` (default `Skills`).
+### Fichiers workspace (bac à sable)
 
-See **`Skills/README.md`** in the repo for details.
+Liste / lecture / écriture uniquement **sous** le workspace. Extensions d’écriture typiques : `.md` `.txt` `.html` `.csv` `.json` `.xml` `.css` `.docx` `.pdf` (voir code pour la liste exacte).
 
-### Options
+### Variables d’environnement (préfixe `ZEDO_`)
 
-- `--model <name>` — Ollama model tag (default: `qwen2.5:7b` or `JARVIS_MODEL`).
-- `--multi-agent` — Router + analyst/writer-style replies (uses extra inference when delegating).
-- `--memory /path/to/file.db` — Custom SQLite path (default: `~/.jarvis/memory.db`).
-- `--workspace DIR` — **Sandbox** for file tools: list/read/write allowed **only** under this directory. If unset, the app looks for the **project root** (walks up from the current directory for `jarvis/` + `pyproject.toml`, or uses `./P_Zed` if you are in the parent folder). This avoids writing to the wrong path when you run from `~/Maison` instead of `~/Maison/P_Zed`.
-- `--no-skills` — Do not inject `Skills/*.md` rules.
-- `--no-file-tools` — Disable workspace file tools (chat only).
-
-### Workspace files (sandbox)
-
-With **Ollama tool calling** enabled (default), the assistant can:
-
-- **List** and **read** files under the workspace root (paths must be **relative**; `..` and absolute paths are rejected).
-- **Read** `.pdf` and `.docx` as **extracted plain text** (requires optional packages below).
-- **Create or overwrite** via **`workspace_write_file`** with these extensions:  
-  **`.md` `.txt` `.html` `.htm` `.csv` `.tsv` `.json` `.xml` `.css` `.docx` `.pdf`**  
-  (WordPress-friendly text/binary outputs; PDF/DOCX are built from **plain text** you provide.)
-
-Optional dependencies for binary/office features (install in your venv):
+Les anciennes variables **`JARVIS_*`** peuvent encore fonctionner pour le modèle (`JARVIS_MODEL`) lors du passage à Zedo ; préfère **`ZEDO_*`** :
 
 ```bash
-pip install pypdf python-docx fpdf2
+export ZEDO_OLLAMA_HOST=http://127.0.0.1:11434
+export ZEDO_MODEL=qwen2.5:7b
+export ZEDO_WORKSPACE_ROOT=/chemin/vers/P_Zed
+export ZEDO_SKILLS_ENABLED=true
 ```
 
-Nothing outside the chosen workspace root is accessible from tools.
+### Commandes REPL
 
-### `Docs/` folder
+`/quit` · `/memory` · `/clear-memory` · `/model <nom>`
 
-The repository includes a **`Docs/`** directory for notes and documents the assistant creates. It should **prefer paths under `Docs/`** (e.g. `Docs/notes/idea.md`). Any subfolders in the path are created automatically when writing a `.md` file. On case-sensitive filesystems, `docs/...` in a path is normalized to `Docs/...` so it matches the folder in the repo.
-
-If the model **prints JSON** instead of using native Ollama tools, jarvis can still **execute** tool-shaped JSON in the reply, and may **auto-save** fenced content when the model forgets to call tools.
-
-If `jarvis` fails with `ModuleNotFoundError: No module named 'jarvis'` after `pip install -e .`, upgrade the install (build backend was switched to Hatchling for reliable editable installs):
+### Migration depuis Jarvis
 
 ```bash
-pip install --upgrade pip hatchling
 pip uninstall jarvis-local -y
 pip install -e .
-python -c "import jarvis"
 ```
 
-### Environment (optional)
-
-Copy and edit:
+Si tu avais une mémoire dans `~/.jarvis/memory.db`, copie-la si besoin :
 
 ```bash
-export JARVIS_OLLAMA_HOST=http://127.0.0.1:11434
-export JARVIS_MODEL=qwen2.5:7b
-export JARVIS_SUMMARY_MODEL=qwen2.5:7b   # optional; defaults to JARVIS_MODEL
-export JARVIS_MULTI_AGENT=false
-export JARVIS_SUMMARY_EVERY=8              # messages before rolling summary refresh
-export JARVIS_WORKSPACE_ROOT=/Users/you/Maison/P_Zed   # optional; default is cwd
-export JARVIS_WORKSPACE_TOOLS=true          # set false to disable file tools
-export JARVIS_SKILLS_ENABLED=true
-export JARVIS_SKILLS_DIR=Skills
-export JARVIS_SKILLS_MAX_CHARS=16000
+mkdir -p ~/.zedo && cp ~/.jarvis/memory.db ~/.zedo/memory.db
 ```
 
-### REPL commands
-
-- `/quit` — Exit  
-- `/memory` — Show stored summary  
-- `/clear-memory` — Delete SQLite memory file  
-- `/model <name>` — Switch model for this session  
-
-## Requirements
+### Prérequis
 
 - Python **3.11+**
-- **Ollama** running locally with at least one pulled model
+- **Ollama** avec au moins un modèle téléchargé
