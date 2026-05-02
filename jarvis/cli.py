@@ -16,6 +16,7 @@ from jarvis.config import get_settings
 from jarvis.memory import load_state, messages_since_last_summary
 from jarvis.ollama import OllamaError, list_models
 from jarvis.pipeline import run_turn
+from jarvis.project_root import discover_project_root, is_jarvis_project_root
 
 
 console = Console()
@@ -77,6 +78,15 @@ async def async_main() -> None:
         settings.memory_path = Path(args.memory)
     if args.workspace:
         settings.workspace_root = Path(args.workspace).expanduser().resolve()
+
+    if settings.workspace_tools and not is_jarvis_project_root(settings.workspace_root):
+        console.print(
+            "[yellow]Warning:[/yellow] workspace does not look like this repo "
+            "(missing jarvis/ + pyproject.toml). File tools may write elsewhere than you expect. "
+            "Run [bold]jarvis[/bold] from inside [bold]P_Zed[/bold], or set "
+            "[bold]JARVIS_WORKSPACE_ROOT[/bold] / [bold]--workspace[/bold] to your clone path "
+            "(e.g. [dim]~/Documents/Maison/P_Zed[/dim])."
+        )
     if args.no_file_tools:
         settings.workspace_tools = False
 

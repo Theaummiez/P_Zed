@@ -17,7 +17,7 @@ from jarvis.memory import (
     set_summary,
 )
 from jarvis.ollama import chat, chat_message
-from jarvis.workspace import OLLAMA_TOOLS, run_tool
+from jarvis.workspace import OLLAMA_TOOLS, normalize_workspace_relative, run_tool, write_workspace_markdown
 
 
 COORDINATOR_SYSTEM = """You are a local AI assistant (Jarvis-style): precise, helpful, concise unless asked for depth.
@@ -26,9 +26,11 @@ If the user speaks another language, reply in that language."""
 
 FILE_TOOLS_HINT = """You have tools to access files ONLY inside the workspace folder (project root). You cannot read or write outside it.
 
-IMPORTANT — Tool use: The runtime invokes tools via Ollama tool_calls. Do NOT paste JSON tool examples in your reply text. Do NOT print fake calls like {"name":"workspace_write_markdown",...}. When you need to read/write/list files, the tools run automatically when your model supports native tool calling — reply briefly and the system executes tools.
+CRITICAL: To create a file you MUST use the workspace tools (native tool_calls). Writing prose or JSON-looking examples in your answer does NOT create files unless the tools actually run.
 
-For new notes and documents, put paths under Docs/ (e.g. Docs/sport/seance1/plan.md). Subfolders are created automatically when you write a .md file. Only .md files can be created; there is no separate \"create directory\" tool — directories appear when you save a file path.
+Do NOT claim a file was created until tools have run successfully.
+
+For new Markdown notes use paths under Docs/ (e.g. Docs/Sport/seance-cardio.md). Subfolders are created automatically when you save a .md path. Only .md files can be created.
 
 When listing, use relative_path \"\" for project root or \"Docs\" for the docs area."""
 
@@ -42,7 +44,95 @@ CLASSIFIER_SYSTEM = """You route user requests. Reply with JSON only, no markdow
 {"delegate":"none"|"analyst"|"writer","reason":"short"}
 Use analyst for math, debugging, multi-step logic, or careful analysis.
 Use writer for long-form drafting, emails, documentation.
-Use none for chit-chat, facts, or short answers."""
+Use none for chit-chat, facts, or short answers.
+Use writer when the user asks to create or save a file or document in the workspace."""
+
+
+def _extract_markdown_fence_body(text: str) -> str | None:
+    """First fenced ``` ... ``` block (optional language tag)."""
+    m = re.search(r"```(?:markdown|md)?\s*\n?([\s\S]*?)```", text, re.IGNORECASE)
+    if m:
+        body = m.group(1).strip()
+        return body if body else None
+    return None
+
+
+def _user_intends_workspace_write(user_text: str) -> bool:
+    t = user_text.lower()
+    if ".md" in t or "markdown" in t:
+        return True
+    if "docs/" in t or "docs\\" in t:
+        return True
+    if any(k in t for k in ("crée", "créer", "creer", "create", "fichier", "file", "enregistr", "sauve")):
+        return True
+    return False
+
+
+def _extract_target_md_path(user_text: str, assistant_reply: str) -> str | None:
+    """Guess Docs/... path from user message or assistant reply."""
+    for src in (user_text, assistant_reply):
+        m = re.search(r"(?i)\b(Docs|docs)/[^\s`'\"]+\.md\b", src)
+        if m:
+            return normalize_workspace_relative(m.group(0))
+    m = re.search(r"(?i)\b(Docs|docs)/[a-zA-Z0-9_./\-]+", user_text)
+    if m:
+        p = m.group(0).rstrip("/").strip()
+        if not p.lower().endswith(".md"):
+            slug = "note"
+            if "cardio" in user_text.lower():
+                slug = "seance-cardio"
+            elif "sport" in user_text.lower():
+                slug = "seance"
+            p = f"{p}/{slug}.md"
+        return normalize_workspace_relative(p)
+    if "cardio" in user_text.lower() or "cardio" in assistant_reply.lower():
+        return "Docs/Sport/seance-cardio.md"
+    return None
+
+
+def _extract_saveable_markdown(assistant_reply: str) -> str | None:
+    """Markdown body for fallback save: fenced block, or whole reply if it looks like md."""
+    fence = _extract_markdown_fence_body(assistant_reply)
+    if fence:
+        return fence
+    t = assistant_reply.strip()
+    if len(t) >= 25 and t.lstrip().startswith("#"):
+        return t
+    return None
+
+
+def _fallback_write_if_needed(
+    settings: Settings,
+    user_text: str,
+    assistant_reply: str,
+    wrote_any_tool: bool,
+) -> tuple[str, list[str]]:
+    """If the model hallucinated a file write, persist Markdown using extracted body."""
+    if not settings.workspace_tools or wrote_any_tool:
+        return assistant_reply, []
+    if not _user_intends_workspace_write(user_text):
+        return assistant_reply, []
+    body = _extract_saveable_markdown(assistant_reply)
+    if not body or len(body) < 10:
+        return assistant_reply, []
+    rel = _extract_target_md_path(user_text, assistant_reply)
+    if not rel:
+        rel = "Docs/notes/from-chat.md"
+    root = settings.workspace_root
+    raw = write_workspace_markdown(root, rel, body)
+    try:
+        data = json.loads(raw)
+    except json.JSONDecodeError:
+        return assistant_reply, []
+    if not data.get("ok"):
+        note = f"\n\n_(Écriture automatique impossible : {data.get('error', raw)})_"
+        return assistant_reply + note, []
+    abs_path = (root / rel).resolve()
+    banner = (
+        f"\n\n---\n_Fichier enregistré automatiquement (le modèle n’avait pas appelé les outils)_ : "
+        f"`{rel}` → `{abs_path}`\n---"
+    )
+    return assistant_reply + banner, [rel]
 
 
 def _workspace_root_line(settings: Settings) -> str:
@@ -125,24 +215,26 @@ async def run_agent_with_tools(
     *,
     temperature: float = 0.7,
     num_ctx: int = 4096,
-) -> str:
-    """Agent loop with Ollama tool calling; filesystem limited to workspace_root."""
+) -> tuple[str, bool]:
+    """Agent loop with Ollama tool calling; returns (reply text, whether workspace_write_markdown ran)."""
     if not settings.workspace_tools:
         # Plain chat (messages must be str-compatible for older chat())
         simple: list[dict[str, Any]] = []
         for m in messages:
             simple.append({k: m[k] for k in m if k in ("role", "content")})
-        return await chat(
+        text = await chat(
             settings.ollama_host,
             settings.model,
             simple,
             temperature=temperature,
             num_ctx=num_ctx,
         )
+        return text, False
 
     root = settings.workspace_root
     rounds = 0
     working = [dict(m) for m in messages]
+    wrote_md_tool = False
 
     while rounds < settings.tool_rounds_max:
         rounds += 1
@@ -184,23 +276,30 @@ async def run_agent_with_tools(
 
         if not tool_calls:
             text = raw_content.strip()
-            return text if text else "(No text response.)"
+            return (text if text else "(No text response.)", wrote_md_tool)
 
         for name, args in tool_calls:
             result = run_tool(root, name, args)
+            if name == "workspace_write_markdown":
+                try:
+                    data = json.loads(result)
+                    if isinstance(data, dict) and data.get("ok"):
+                        wrote_md_tool = True
+                except json.JSONDecodeError:
+                    pass
             working.append({"role": "tool", "tool_name": name, "content": result})
 
-    return "Stopped: too many tool rounds (increase JARVIS_TOOL_ROUNDS_MAX if needed)."
+    return "Stopped: too many tool rounds (increase JARVIS_TOOL_ROUNDS_MAX if needed).", wrote_md_tool
 
 
 async def _maybe_delegate(
     settings: Settings,
     user_text: str,
     memory_excerpt: str,
-) -> str | None:
-    """Returns specialist reply or None to handle with coordinator only."""
+) -> tuple[str | None, bool]:
+    """Returns (specialist reply or None, whether workspace_write_markdown ran)."""
     if not settings.multi_agent:
-        return None
+        return None, False
     router_messages = [
         {"role": "system", "content": CLASSIFIER_SYSTEM},
         {
@@ -224,10 +323,10 @@ async def _maybe_delegate(
         data = json.loads(clean)
         delegate = data.get("delegate", "none")
     except (json.JSONDecodeError, TypeError):
-        return None
+        return None, False
 
     if delegate not in ("analyst", "writer"):
-        return None
+        return None, False
 
     sys = ANALYST_SYSTEM if delegate == "analyst" else WRITER_SYSTEM
     specialist_messages: list[dict[str, Any]] = [
@@ -239,12 +338,13 @@ async def _maybe_delegate(
             "content": f"Memory context:\n{memory_excerpt[:3000]}\n\nTask:\n{user_text}",
         },
     ]
-    return await run_agent_with_tools(
+    text, wrote = await run_agent_with_tools(
         settings,
         specialist_messages,
         temperature=0.5,
         num_ctx=4096,
     )
+    return text, wrote
 
 
 async def refresh_summary(settings: Settings, memory_path, prev_summary: str) -> str:
@@ -294,9 +394,11 @@ async def run_turn(
         for m in state.messages[-settings.recent_turns * 2 :]:
             memory_excerpt += f"{m['role'].upper()}: {m['content']}\n"
 
-    delegated = await _maybe_delegate(settings, user_text, memory_excerpt)
+    delegated, delegated_wrote = await _maybe_delegate(settings, user_text, memory_excerpt)
     if delegated is not None:
-        assistant_content = delegated
+        assistant_content, _paths = _fallback_write_if_needed(
+            settings, user_text, delegated, delegated_wrote
+        )
     else:
         messages_list: list[dict[str, Any]] = [
             {"role": "system", "content": COORDINATOR_SYSTEM},
@@ -314,11 +416,14 @@ async def run_turn(
             messages_list.append(dict(m))
         messages_list.append({"role": "user", "content": user_text})
 
-        assistant_content = await run_agent_with_tools(
+        agent_reply, agent_wrote = await run_agent_with_tools(
             settings,
             messages_list,
             temperature=0.7,
             num_ctx=4096,
+        )
+        assistant_content, _paths = _fallback_write_if_needed(
+            settings, user_text, agent_reply, agent_wrote
         )
 
     append_message(path, "user", user_text)

@@ -5,9 +5,11 @@ from pathlib import Path
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
+from jarvis.project_root import discover_project_root
+
 
 def _default_workspace_root() -> Path:
-    return Path.cwd()
+    return discover_project_root()
 
 
 class Settings(BaseSettings):

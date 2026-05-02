@@ -47,7 +47,7 @@ Run a **local** assistant on your machine: chat in the terminal, **no API keys**
 - `--model <name>` — Ollama model tag (default: `qwen2.5:7b` or `JARVIS_MODEL`).
 - `--multi-agent` — Router + analyst/writer-style replies (uses extra inference when delegating).
 - `--memory /path/to/file.db` — Custom SQLite path (default: `~/.jarvis/memory.db`).
-- `--workspace DIR` — **Sandbox** for file tools: the model can only list/read/create `.md` files under this directory (default: **current working directory**). Use `cd /chemin/vers/P_Zed` before launching, or pass `--workspace "/Users/you/Maison/P_Zed"`.
+- `--workspace DIR` — **Sandbox** for file tools: the model can only list/read/create `.md` files under this directory. If unset, the app looks for the **project root** (walks up from the current directory for `jarvis/` + `pyproject.toml`, or uses `./P_Zed` if you are in the parent folder). This avoids writing to the wrong path when you run from `~/Maison` instead of `~/Maison/P_Zed`.
 - `--no-file-tools` — Disable workspace tools (chat only).
 
 ### Workspace files (sandbox)
