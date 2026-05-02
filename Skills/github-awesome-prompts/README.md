@@ -1,6 +1,6 @@
 # Prompts importés depuis [awesome-prompts](https://github.com/ai-boost/awesome-prompts)
 
-Licence du dépôt source : voir le fichier `LICENSE` du repo upstream.  
+Licence du dépôt source : **GPL-3.0** (voir [LICENSE](https://github.com/ai-boost/awesome-prompts/blob/main/LICENSE) du repo upstream).  
 Les fichiers dans ce dossier sont des **copies ou adaptations** pour Zedo ; garde le lien vers le projet original pour les mises à jour.
 
 | Fichier local | Source dans awesome-prompts |
