@@ -59,6 +59,15 @@ With **Ollama tool calling** enabled (default), the assistant can:
 
 Nothing outside the chosen workspace root is accessible from tools.
 
+If `jarvis` fails with `ModuleNotFoundError: No module named 'jarvis'` after `pip install -e .`, upgrade the install (build backend was switched to Hatchling for reliable editable installs):
+
+```bash
+pip install --upgrade pip hatchling
+pip uninstall jarvis-local -y
+pip install -e .
+python -c "import jarvis"
+```
+
 ### Environment (optional)
 
 Copy and edit:

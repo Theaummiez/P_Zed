@@ -15,10 +15,9 @@ dependencies = [
 jarvis = "jarvis.cli:main"
 
 [build-system]
-requires = ["setuptools>=61"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
-# Explicit package list so `pip install .` always installs the `jarvis` package
-# (auto-discovery can miss it in some setuptools versions).
-[tool.setuptools]
+# Ship only the `jarvis` package (flat layout at repo root).
+[tool.hatch.build.targets.wheel]
 packages = ["jarvis"]
