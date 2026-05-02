@@ -18,6 +18,7 @@ jarvis = "jarvis.cli:main"
 requires = ["setuptools>=61"]
 build-backend = "setuptools.build_meta"
 
-[tool.setuptools.packages.find]
-where = ["."]
-include = ["jarvis*"]
+# Explicit package list so `pip install .` always installs the `jarvis` package
+# (auto-discovery can miss it in some setuptools versions).
+[tool.setuptools]
+packages = ["jarvis"]
