@@ -35,6 +35,10 @@
    python -m zedo.cli
    ```
 
+### Interface (inspirée Hermes CLI)
+
+L’UI terminal suit l’esprit **[Hermes Agent](https://hermes-agent.nousresearch.com/docs/user-guide/cli)** : bannière **ZEDO**, barre de statut (modèle · contexte local · durée de session), panneaux arrondis, invite **`ZEDO ›`**, commande **`/help`**, spinner pendant la réponse. Ce n’est pas le TUI Textual complet de Hermes — c’est une couche **Rich** avec la même hiérarchie visuelle.
+
 ### Skills (instructions perso, style Cursor)
 
 Ajoute des **`Skills/*.md`** sous la **racine workspace** (comme `Docs/`). Contenu injecté dans le contexte système.
