@@ -17,6 +17,7 @@ from jarvis.memory import (
     set_summary,
 )
 from jarvis.ollama import chat, chat_message
+from jarvis.skills import load_skills_markdown
 from jarvis.workspace import (
     ALLOWED_WRITE_EXTENSIONS,
     OLLAMA_TOOLS,
@@ -24,6 +25,17 @@ from jarvis.workspace import (
     run_tool,
     write_workspace_file,
 )
+
+
+def _skills_system_message(settings: Settings, user_text: str) -> str | None:
+    text = load_skills_markdown(
+        settings.workspace_root,
+        user_text,
+        skills_subdir=settings.skills_dir,
+        max_total_chars=settings.skills_max_chars,
+        enabled=settings.skills_enabled,
+    )
+    return text.strip() if text.strip() else None
 
 
 COORDINATOR_SYSTEM = """You are a local AI assistant (Jarvis-style): precise, helpful, concise unless asked for depth.
@@ -370,6 +382,7 @@ async def _maybe_delegate(
         return None, False
 
     sys = ANALYST_SYSTEM if delegate == "analyst" else WRITER_SYSTEM
+    skills_block = _skills_system_message(settings, user_text)
     specialist_messages: list[dict[str, Any]] = [
         {"role": "system", "content": sys},
         {"role": "system", "content": _workspace_root_line(settings)},
@@ -379,6 +392,8 @@ async def _maybe_delegate(
             "content": f"Memory context:\n{memory_excerpt[:3000]}\n\nTask:\n{user_text}",
         },
     ]
+    if skills_block:
+        specialist_messages.insert(1, {"role": "system", "content": skills_block})
     text, wrote = await run_agent_with_tools(
         settings,
         specialist_messages,
@@ -436,6 +451,7 @@ async def run_turn(
             memory_excerpt += f"{m['role'].upper()}: {m['content']}\n"
 
     delegated, delegated_wrote = await _maybe_delegate(settings, user_text, memory_excerpt)
+    skills_block = _skills_system_message(settings, user_text)
     if delegated is not None:
         assistant_content, _paths = _fallback_write_if_needed(
             settings, user_text, delegated, delegated_wrote
@@ -446,6 +462,8 @@ async def run_turn(
             {"role": "system", "content": _workspace_root_line(settings)},
             {"role": "system", "content": FILE_TOOLS_HINT},
         ]
+        if skills_block:
+            messages_list.insert(1, {"role": "system", "content": skills_block})
         if state.summary:
             messages_list.append(
                 {

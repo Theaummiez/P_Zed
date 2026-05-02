@@ -42,13 +42,38 @@ Run a **local** assistant on your machine: chat in the terminal, **no API keys**
    python -m jarvis.cli
    ```
 
+### Skills (custom instructions, Cursor-style)
+
+Add **`Skills/*.md`** under your **workspace root** (same folder as `Docs/`). Each file can hold rules, checklists, or tone. Content is injected into the **system** context so the model follows it like project instructions.
+
+- Optional YAML frontmatter:
+
+```markdown
+---
+title: Mes règles sport
+always: false
+keywords: sport, séance, cardio
+---
+
+- Toujours créer les fichiers sous `Docs/Sport/` …
+```
+
+- **`keywords`**: skill loaded only when the user message contains one of these words (comma-separated).
+- **`always: true`**: always loaded.
+- No frontmatter: treated as **always on** (simple global skill).
+
+Disable with **`--no-skills`** or `export JARVIS_SKILLS_ENABLED=false`. Tune size with `JARVIS_SKILLS_MAX_CHARS` (default 16000). Folder name: `JARVIS_SKILLS_DIR` (default `Skills`).
+
+See **`Skills/README.md`** in the repo for details.
+
 ### Options
 
 - `--model <name>` — Ollama model tag (default: `qwen2.5:7b` or `JARVIS_MODEL`).
 - `--multi-agent` — Router + analyst/writer-style replies (uses extra inference when delegating).
 - `--memory /path/to/file.db` — Custom SQLite path (default: `~/.jarvis/memory.db`).
 - `--workspace DIR` — **Sandbox** for file tools: list/read/write allowed **only** under this directory. If unset, the app looks for the **project root** (walks up from the current directory for `jarvis/` + `pyproject.toml`, or uses `./P_Zed` if you are in the parent folder). This avoids writing to the wrong path when you run from `~/Maison` instead of `~/Maison/P_Zed`.
-- `--no-file-tools` — Disable workspace tools (chat only).
+- `--no-skills` — Do not inject `Skills/*.md` rules.
+- `--no-file-tools` — Disable workspace file tools (chat only).
 
 ### Workspace files (sandbox)
 
@@ -95,6 +120,9 @@ export JARVIS_MULTI_AGENT=false
 export JARVIS_SUMMARY_EVERY=8              # messages before rolling summary refresh
 export JARVIS_WORKSPACE_ROOT=/Users/you/Maison/P_Zed   # optional; default is cwd
 export JARVIS_WORKSPACE_TOOLS=true          # set false to disable file tools
+export JARVIS_SKILLS_ENABLED=true
+export JARVIS_SKILLS_DIR=Skills
+export JARVIS_SKILLS_MAX_CHARS=16000
 ```
 
 ### REPL commands

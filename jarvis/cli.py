@@ -49,6 +49,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Disable workspace list/read/write tools for this session",
     )
+    p.add_argument(
+        "--no-skills",
+        action="store_true",
+        help="Disable loading Skills/*.md into system context",
+    )
     return p
 
 
@@ -87,14 +92,26 @@ async def async_main() -> None:
             "[bold]JARVIS_WORKSPACE_ROOT[/bold] / [bold]--workspace[/bold] to your clone path "
             "(e.g. [dim]~/Documents/Maison/P_Zed[/dim])."
         )
-    if args.no_file_tools:
-        settings.workspace_tools = False
+    if args.no_skills:
+        settings.skills_enabled = False
 
     await _ensure_model(settings.ollama_host, settings.model)
 
     title = f"Jarvis (local) — model [bold]{settings.model}[/bold]"
     if settings.multi_agent:
         title += " — [cyan]multi-agent[/cyan]"
+    try:
+        ws_root = settings.workspace_root.resolve()
+        skills_dir = ws_root / settings.skills_dir
+        if settings.skills_enabled and skills_dir.is_dir():
+            title += f"\n[dim]Skills:[/dim] [cyan]{skills_dir.relative_to(ws_root)}/[/cyan] [dim](*.md)[/dim]"
+        elif settings.skills_enabled:
+            title += (
+                f"\n[dim]Skills:[/dim] [dim](no {settings.skills_dir}/ here — "
+                "create it under workspace for custom rules)[/dim]"
+            )
+    except (OSError, ValueError):
+        pass
     try:
         ws = settings.workspace_root.resolve()
     except OSError:

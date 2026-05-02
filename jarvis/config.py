@@ -46,6 +46,17 @@ class Settings(BaseSettings):
         description="Expose list/read/write-.md tools to the model (Ollama tool calling)",
     )
     tool_rounds_max: int = Field(default=16, ge=1, le=32, description="Max tool-call iterations per message")
+    skills_enabled: bool = Field(
+        default=True,
+        description="Inject Markdown skills from workspace Skills/ into system context",
+    )
+    skills_dir: str = Field(default="Skills", description="Subdirectory of workspace_root for *.md skills")
+    skills_max_chars: int = Field(
+        default=16_000,
+        ge=500,
+        le=64_000,
+        description="Max characters of injected skill text per message",
+    )
 
 
 def get_settings() -> Settings:
