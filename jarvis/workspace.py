@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import json
 import os
 from pathlib import Path
@@ -9,6 +10,37 @@ from pathlib import Path
 READ_MAX_BYTES = 512 * 1024
 LIST_MAX_ENTRIES = 400
 WRITE_MAX_BYTES = 2 * 1024 * 1024
+
+# WordPress-friendly / common web & office formats (create & overwrite)
+ALLOWED_WRITE_EXTENSIONS = frozenset(
+    {
+        ".md",
+        ".txt",
+        ".html",
+        ".htm",
+        ".csv",
+        ".tsv",
+        ".json",
+        ".xml",
+        ".css",
+        ".docx",
+        ".pdf",
+    }
+)
+
+TEXT_WRITE_EXTENSIONS = frozenset(
+    {
+        ".md",
+        ".txt",
+        ".html",
+        ".htm",
+        ".csv",
+        ".tsv",
+        ".json",
+        ".xml",
+        ".css",
+    }
+)
 
 
 class WorkspaceError(ValueError):
@@ -59,7 +91,6 @@ def list_workspace(root: Path, relative_dir: str = "", *, recursive: bool = Fals
     if recursive:
         count = 0
         for dirpath, dirnames, filenames in os.walk(base, topdown=True):
-            # skip descending into hidden dirs
             dirnames[:] = [d for d in dirnames if not d.startswith(".")]
             for name in filenames:
                 if name.startswith("."):
@@ -89,6 +120,29 @@ def list_workspace(root: Path, relative_dir: str = "", *, recursive: bool = Fals
     return json.dumps({"root": str(root), "entries": entries}, ensure_ascii=False)
 
 
+def _read_docx_text(path: Path) -> str:
+    try:
+        from docx import Document  # type: ignore[import-untyped]
+    except ImportError as e:
+        raise WorkspaceError("python-docx not installed; pip install python-docx") from e
+    doc = Document(str(path))
+    return "\n".join(p.text for p in doc.paragraphs)
+
+
+def _read_pdf_text(path: Path) -> str:
+    try:
+        from pypdf import PdfReader  # type: ignore[import-untyped]
+    except ImportError as e:
+        raise WorkspaceError("pypdf not installed; pip install pypdf") from e
+    reader = PdfReader(str(path))
+    parts: list[str] = []
+    for page in reader.pages:
+        t = page.extract_text()
+        if t:
+            parts.append(t)
+    return "\n\n".join(parts)
+
+
 def read_workspace_file(root: Path, relative_path: str) -> str:
     path = resolve_under_root(root, normalize_workspace_relative(relative_path))
     if not path.is_file():
@@ -103,24 +157,95 @@ def read_workspace_file(root: Path, relative_path: str) -> str:
                 "size": size,
             }
         )
+    ext = path.suffix.lower()
+    if ext == ".pdf":
+        try:
+            text = _read_pdf_text(path)
+            return json.dumps({"path": relative_path, "content": text, "format": "pdf_text"})
+        except WorkspaceError as e:
+            return json.dumps({"error": str(e), "path": relative_path})
+    if ext == ".docx":
+        try:
+            text = _read_docx_text(path)
+            return json.dumps({"path": relative_path, "content": text, "format": "docx_text"})
+        except WorkspaceError as e:
+            return json.dumps({"error": str(e), "path": relative_path})
+
     text = path.read_text(encoding="utf-8", errors="replace")
     return json.dumps({"path": relative_path, "content": text}, ensure_ascii=False)
 
 
-def write_workspace_markdown(root: Path, relative_path: str, content: str) -> str:
+def _write_docx(path: Path, content: str) -> None:
+    try:
+        from docx import Document  # type: ignore[import-untyped]
+    except ImportError as e:
+        raise WorkspaceError("python-docx not installed; pip install python-docx") from e
+    doc = Document()
+    for block in content.replace("\r\n", "\n").split("\n"):
+        doc.add_paragraph(block)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    doc.save(str(path))
+
+
+def _write_pdf(path: Path, content: str) -> None:
+    try:
+        from fpdf import FPDF  # type: ignore[import-untyped]
+    except ImportError as e:
+        raise WorkspaceError("fpdf2 not installed; pip install fpdf2") from e
+    path.parent.mkdir(parents=True, exist_ok=True)
+    pdf = FPDF()
+    pdf.set_margins(15, 15, 15)
+    pdf.set_auto_page_break(auto=True, margin=15)
+    pdf.add_page()
+    pdf.set_font("Helvetica", size=11)
+    w = pdf.w - pdf.l_margin - pdf.r_margin
+    for line in content.replace("\r\n", "\n").split("\n"):
+        pdf.multi_cell(w, 6, line or " ")
+    pdf.output(str(path))
+
+
+def write_workspace_file(root: Path, relative_path: str, content: str) -> str:
+    """Create or overwrite allowed file types; folders created as needed."""
     if not isinstance(content, str):
         content = str(content)
     if len(content.encode("utf-8")) > WRITE_MAX_BYTES:
         return json.dumps({"error": "content too large", "max_bytes": WRITE_MAX_BYTES})
     rel_norm = normalize_workspace_relative(relative_path)
-    if not rel_norm.lower().endswith(".md"):
-        return json.dumps({"error": "only .md files can be created or overwritten", "path": relative_path})
+    ext = Path(rel_norm).suffix.lower()
+    if ext not in ALLOWED_WRITE_EXTENSIONS:
+        return json.dumps(
+            {
+                "error": "extension not allowed",
+                "path": relative_path,
+                "allowed": sorted(ALLOWED_WRITE_EXTENSIONS),
+            }
+        )
     path = resolve_under_root(root, rel_norm)
     if path.exists() and not path.is_file():
         return json.dumps({"error": "path exists and is not a file", "path": relative_path})
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content, encoding="utf-8")
-    return json.dumps({"ok": True, "path": rel_norm, "bytes": len(content.encode("utf-8"))})
+
+    try:
+        if ext in TEXT_WRITE_EXTENSIONS:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(content, encoding="utf-8")
+        elif ext == ".docx":
+            _write_docx(path, content)
+        elif ext == ".pdf":
+            _write_pdf(path, content)
+        else:
+            return json.dumps({"error": f"unhandled extension {ext}", "path": relative_path})
+    except WorkspaceError as e:
+        return json.dumps({"error": str(e), "path": relative_path})
+    except Exception as e:
+        return json.dumps({"error": str(e), "path": relative_path})
+
+    nbytes = path.stat().st_size if path.exists() else len(content.encode("utf-8"))
+    return json.dumps({"ok": True, "path": rel_norm, "bytes": nbytes})
+
+
+def write_workspace_markdown(root: Path, relative_path: str, content: str) -> str:
+    """Backward-compatible: only .md via general writer."""
+    return write_workspace_file(root, relative_path, content)
 
 
 OLLAMA_TOOLS: list[dict] = [
@@ -149,7 +274,7 @@ OLLAMA_TOOLS: list[dict] = [
         "type": "function",
         "function": {
             "name": "workspace_read_file",
-            "description": "Read a text file under the workspace (utf-8).",
+            "description": "Read a file under the workspace. Text formats as UTF-8; .pdf and .docx return extracted plain text.",
             "parameters": {
                 "type": "object",
                 "required": ["relative_path"],
@@ -165,19 +290,19 @@ OLLAMA_TOOLS: list[dict] = [
     {
         "type": "function",
         "function": {
-            "name": "workspace_write_markdown",
-            "description": "Create or overwrite a Markdown (.md) file under the workspace. Prefer paths under Docs/ for notes you create (e.g. Docs/meeting-notes.md or Docs/2026/jan/plan.md); intermediate folders are created automatically.",
+            "name": "workspace_write_file",
+            "description": "Create or overwrite a file under the workspace. Allowed extensions: .md .txt .html .htm .csv .tsv .json .xml .css .docx .pdf — plain text content (for Word/PDF the text is converted). Prefer Docs/ for user documents.",
             "parameters": {
                 "type": "object",
                 "required": ["relative_path", "content"],
                 "properties": {
                     "relative_path": {
                         "type": "string",
-                        "description": "Target path ending in .md, relative to workspace.",
+                        "description": "Target path with allowed extension, relative to workspace.",
                     },
                     "content": {
                         "type": "string",
-                        "description": "Full Markdown body to write.",
+                        "description": "File body: markdown/html/csv/json/xml/css as text; for .docx/.pdf use plain text (line breaks preserved).",
                     },
                 },
             },
@@ -206,12 +331,12 @@ def run_tool(root: Path, name: str, arguments: dict | str | None) -> str:
             if not rp:
                 return json.dumps({"error": "missing relative_path"})
             return read_workspace_file(root, str(rp))
-        if name == "workspace_write_markdown":
+        if name in ("workspace_write_file", "workspace_write_markdown"):
             rp = args.get("relative_path") or args.get("path")
             content = args.get("content", "")
             if not rp:
                 return json.dumps({"error": "missing relative_path"})
-            return write_workspace_markdown(root, str(rp), str(content))
+            return write_workspace_file(root, str(rp), str(content))
     except WorkspaceError as e:
         return json.dumps({"error": str(e)})
     return json.dumps({"error": f"unknown tool {name}"})

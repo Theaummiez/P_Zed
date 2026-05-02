@@ -17,7 +17,13 @@ from jarvis.memory import (
     set_summary,
 )
 from jarvis.ollama import chat, chat_message
-from jarvis.workspace import OLLAMA_TOOLS, normalize_workspace_relative, run_tool, write_workspace_markdown
+from jarvis.workspace import (
+    ALLOWED_WRITE_EXTENSIONS,
+    OLLAMA_TOOLS,
+    normalize_workspace_relative,
+    run_tool,
+    write_workspace_file,
+)
 
 
 COORDINATOR_SYSTEM = """You are a local AI assistant (Jarvis-style): precise, helpful, concise unless asked for depth.
@@ -30,7 +36,7 @@ CRITICAL: To create a file you MUST use the workspace tools (native tool_calls).
 
 Do NOT claim a file was created until tools have run successfully.
 
-For new Markdown notes use paths under Docs/ (e.g. Docs/Sport/seance-cardio.md). Subfolders are created automatically when you save a .md path. Only .md files can be created.
+Use workspace_write_file to create files. Allowed types: .md .txt .html .csv .tsv .json .xml .css .docx .pdf (plain text body; PDF/DOCX are generated from text). Prefer Docs/ for user documents (e.g. Docs/export/page.html, Docs/data/posts.csv).
 
 When listing, use relative_path \"\" for project root or \"Docs\" for the docs area."""
 
@@ -48,18 +54,11 @@ Use none for chit-chat, facts, or short answers.
 Use writer when the user asks to create or save a file or document in the workspace."""
 
 
-def _extract_markdown_fence_body(text: str) -> str | None:
-    """First fenced ``` ... ``` block (optional language tag)."""
-    m = re.search(r"```(?:markdown|md)?\s*\n?([\s\S]*?)```", text, re.IGNORECASE)
-    if m:
-        body = m.group(1).strip()
-        return body if body else None
-    return None
-
-
 def _user_intends_workspace_write(user_text: str) -> bool:
     t = user_text.lower()
-    if ".md" in t or "markdown" in t:
+    if any(ext in t for ext in (".md", ".pdf", ".docx", ".csv", ".html", ".htm", ".json", ".xml", ".txt", ".css")):
+        return True
+    if "markdown" in t:
         return True
     if "docs/" in t or "docs\\" in t:
         return True
@@ -68,33 +67,75 @@ def _user_intends_workspace_write(user_text: str) -> bool:
     return False
 
 
-def _extract_target_md_path(user_text: str, assistant_reply: str) -> str | None:
-    """Guess Docs/... path from user message or assistant reply."""
-    for src in (user_text, assistant_reply):
-        m = re.search(r"(?i)\b(Docs|docs)/[^\s`'\"]+\.md\b", src)
-        if m:
-            return normalize_workspace_relative(m.group(0))
-    m = re.search(r"(?i)\b(Docs|docs)/[a-zA-Z0-9_./\-]+", user_text)
-    if m:
-        p = m.group(0).rstrip("/").strip()
-        if not p.lower().endswith(".md"):
-            slug = "note"
-            if "cardio" in user_text.lower():
-                slug = "seance-cardio"
-            elif "sport" in user_text.lower():
-                slug = "seance"
-            p = f"{p}/{slug}.md"
-        return normalize_workspace_relative(p)
-    if "cardio" in user_text.lower() or "cardio" in assistant_reply.lower():
-        return "Docs/Sport/seance-cardio.md"
+def _hint_extension(user_text: str) -> str | None:
+    """Guess extension from user message."""
+    t = user_text.lower()
+    if ".pdf" in t or " pdf" in t:
+        return ".pdf"
+    if ".docx" in t or " word" in t:
+        return ".docx"
+    if ".csv" in t:
+        return ".csv"
+    if ".html" in t or ".htm" in t:
+        return ".html"
+    if ".json" in t:
+        return ".json"
+    if ".xml" in t:
+        return ".xml"
+    if ".txt" in t:
+        return ".txt"
+    if ".css" in t:
+        return ".css"
     return None
 
 
-def _extract_saveable_markdown(assistant_reply: str) -> str | None:
-    """Markdown body for fallback save: fenced block, or whole reply if it looks like md."""
-    fence = _extract_markdown_fence_body(assistant_reply)
-    if fence:
-        return fence
+def _extract_target_file_path(user_text: str, assistant_reply: str) -> str | None:
+    """Guess relative path from messages (Docs/... with allowed extension)."""
+    exts = "|".join(sorted(re.escape(e[1:]) for e in ALLOWED_WRITE_EXTENSIONS))
+    path_core = r"(?:Docs|docs)/[a-zA-Z0-9_./\-]+"
+    pat_full = re.compile(rf"(?i)\b{path_core}\.(?:{exts})\b")
+    for src in (user_text, assistant_reply):
+        m = pat_full.search(src)
+        if m:
+            return normalize_workspace_relative(m.group(0))
+    loose = re.compile(rf"(?i)\b{path_core}\.(?:{exts})(?=\s|$|[`'\",.;)])")
+    for src in (user_text, assistant_reply):
+        for match in loose.finditer(src):
+            return normalize_workspace_relative(match.group(0))
+    m = re.search(r"(?i)\b(Docs|docs)/[a-zA-Z0-9_./\-]+", user_text)
+    if m:
+        p = m.group(0).rstrip("/").strip()
+        ext = _hint_extension(user_text) or ".md"
+        slug = "note"
+        tl = user_text.lower()
+        if "cardio" in tl:
+            slug = "seance-cardio"
+        elif "sport" in tl:
+            slug = "seance"
+        if not any(p.lower().endswith(e) for e in ALLOWED_WRITE_EXTENSIONS):
+            p = f"{p}/{slug}{ext}"
+        return normalize_workspace_relative(p)
+    return None
+
+
+def _default_target_path(user_text: str) -> str:
+    ext = _hint_extension(user_text) or ".md"
+    tl = user_text.lower()
+    if "cardio" in tl or "sport" in tl:
+        return normalize_workspace_relative(f"Docs/Sport/note{ext}")
+    return f"Docs/notes/from-chat{ext}"
+
+
+def _extract_saveable_body(assistant_reply: str) -> str | None:
+    """Body for fallback save: fenced code block (md, html, csv, json, ...) or markdown-looking reply."""
+    m = re.search(
+        r"```(?:markdown|md|html|htm|csv|json|xml|txt|css|pdf|docx)?\s*\n?([\s\S]*?)```",
+        assistant_reply,
+        re.IGNORECASE,
+    )
+    if m:
+        body = m.group(1).strip()
+        return body if body else None
     t = assistant_reply.strip()
     if len(t) >= 25 and t.lstrip().startswith("#"):
         return t
@@ -107,19 +148,19 @@ def _fallback_write_if_needed(
     assistant_reply: str,
     wrote_any_tool: bool,
 ) -> tuple[str, list[str]]:
-    """If the model hallucinated a file write, persist Markdown using extracted body."""
+    """If the model hallucinated a file write, persist content using workspace_write_file rules."""
     if not settings.workspace_tools or wrote_any_tool:
         return assistant_reply, []
     if not _user_intends_workspace_write(user_text):
         return assistant_reply, []
-    body = _extract_saveable_markdown(assistant_reply)
+    body = _extract_saveable_body(assistant_reply)
     if not body or len(body) < 10:
         return assistant_reply, []
-    rel = _extract_target_md_path(user_text, assistant_reply)
+    rel = _extract_target_file_path(user_text, assistant_reply)
     if not rel:
-        rel = "Docs/notes/from-chat.md"
+        rel = _default_target_path(user_text)
     root = settings.workspace_root
-    raw = write_workspace_markdown(root, rel, body)
+    raw = write_workspace_file(root, rel, body)
     try:
         data = json.loads(raw)
     except json.JSONDecodeError:
@@ -144,7 +185,7 @@ def _workspace_root_line(settings: Settings) -> str:
 
 
 KNOWN_WORKSPACE_TOOLS = frozenset(
-    {"workspace_list", "workspace_read_file", "workspace_write_markdown"}
+    {"workspace_list", "workspace_read_file", "workspace_write_file", "workspace_write_markdown"}
 )
 
 
@@ -216,7 +257,7 @@ async def run_agent_with_tools(
     temperature: float = 0.7,
     num_ctx: int = 4096,
 ) -> tuple[str, bool]:
-    """Agent loop with Ollama tool calling; returns (reply text, whether workspace_write_markdown ran)."""
+    """Agent loop with Ollama tool calling; returns (reply text, whether a workspace write tool succeeded)."""
     if not settings.workspace_tools:
         # Plain chat (messages must be str-compatible for older chat())
         simple: list[dict[str, Any]] = []
@@ -234,7 +275,7 @@ async def run_agent_with_tools(
     root = settings.workspace_root
     rounds = 0
     working = [dict(m) for m in messages]
-    wrote_md_tool = False
+    wrote_file_tool = False
 
     while rounds < settings.tool_rounds_max:
         rounds += 1
@@ -276,20 +317,20 @@ async def run_agent_with_tools(
 
         if not tool_calls:
             text = raw_content.strip()
-            return (text if text else "(No text response.)", wrote_md_tool)
+            return (text if text else "(No text response.)", wrote_file_tool)
 
         for name, args in tool_calls:
             result = run_tool(root, name, args)
-            if name == "workspace_write_markdown":
+            if name in ("workspace_write_markdown", "workspace_write_file"):
                 try:
                     data = json.loads(result)
                     if isinstance(data, dict) and data.get("ok"):
-                        wrote_md_tool = True
+                        wrote_file_tool = True
                 except json.JSONDecodeError:
                     pass
             working.append({"role": "tool", "tool_name": name, "content": result})
 
-    return "Stopped: too many tool rounds (increase JARVIS_TOOL_ROUNDS_MAX if needed).", wrote_md_tool
+    return "Stopped: too many tool rounds (increase JARVIS_TOOL_ROUNDS_MAX if needed).", wrote_file_tool
 
 
 async def _maybe_delegate(
@@ -297,7 +338,7 @@ async def _maybe_delegate(
     user_text: str,
     memory_excerpt: str,
 ) -> tuple[str | None, bool]:
-    """Returns (specialist reply or None, whether workspace_write_markdown ran)."""
+    """Returns (specialist reply or None, whether a workspace write tool succeeded)."""
     if not settings.multi_agent:
         return None, False
     router_messages = [

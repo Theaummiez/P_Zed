@@ -47,15 +47,24 @@ Run a **local** assistant on your machine: chat in the terminal, **no API keys**
 - `--model <name>` — Ollama model tag (default: `qwen2.5:7b` or `JARVIS_MODEL`).
 - `--multi-agent` — Router + analyst/writer-style replies (uses extra inference when delegating).
 - `--memory /path/to/file.db` — Custom SQLite path (default: `~/.jarvis/memory.db`).
-- `--workspace DIR` — **Sandbox** for file tools: the model can only list/read/create `.md` files under this directory. If unset, the app looks for the **project root** (walks up from the current directory for `jarvis/` + `pyproject.toml`, or uses `./P_Zed` if you are in the parent folder). This avoids writing to the wrong path when you run from `~/Maison` instead of `~/Maison/P_Zed`.
+- `--workspace DIR` — **Sandbox** for file tools: list/read/write allowed **only** under this directory. If unset, the app looks for the **project root** (walks up from the current directory for `jarvis/` + `pyproject.toml`, or uses `./P_Zed` if you are in the parent folder). This avoids writing to the wrong path when you run from `~/Maison` instead of `~/Maison/P_Zed`.
 - `--no-file-tools` — Disable workspace tools (chat only).
 
 ### Workspace files (sandbox)
 
 With **Ollama tool calling** enabled (default), the assistant can:
 
-- **List** and **read** text files under the workspace root (paths must be **relative**; `..` and absolute paths are rejected).
-- **Create or overwrite** files only if the path ends with **`.md`**.
+- **List** and **read** files under the workspace root (paths must be **relative**; `..` and absolute paths are rejected).
+- **Read** `.pdf` and `.docx` as **extracted plain text** (requires optional packages below).
+- **Create or overwrite** via **`workspace_write_file`** with these extensions:  
+  **`.md` `.txt` `.html` `.htm` `.csv` `.tsv` `.json` `.xml` `.css` `.docx` `.pdf`**  
+  (WordPress-friendly text/binary outputs; PDF/DOCX are built from **plain text** you provide.)
+
+Optional dependencies for binary/office features (install in your venv):
+
+```bash
+pip install pypdf python-docx fpdf2
+```
 
 Nothing outside the chosen workspace root is accessible from tools.
 
@@ -63,7 +72,7 @@ Nothing outside the chosen workspace root is accessible from tools.
 
 The repository includes a **`Docs/`** directory for notes and documents the assistant creates. It should **prefer paths under `Docs/`** (e.g. `Docs/notes/idea.md`). Any subfolders in the path are created automatically when writing a `.md` file. On case-sensitive filesystems, `docs/...` in a path is normalized to `Docs/...` so it matches the folder in the repo.
 
-If the model **prints JSON** instead of using native Ollama tools, **jarvis 0.1.3+** can still **execute** `workspace_write_markdown` / `workspace_list` / `workspace_read_file` calls found in the reply text.
+If the model **prints JSON** instead of using native Ollama tools, jarvis can still **execute** tool-shaped JSON in the reply, and may **auto-save** fenced content when the model forgets to call tools.
 
 If `jarvis` fails with `ModuleNotFoundError: No module named 'jarvis'` after `pip install -e .`, upgrade the install (build backend was switched to Hatchling for reliable editable installs):
 
