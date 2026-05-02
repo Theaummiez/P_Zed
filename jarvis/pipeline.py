@@ -25,9 +25,12 @@ You run on the user's machine; be practical about limits and suggest concrete st
 If the user speaks another language, reply in that language."""
 
 FILE_TOOLS_HINT = """You have tools to access files ONLY inside the workspace folder (project root). You cannot read or write outside it.
-Use paths relative to that root. For new notes and documents you create, put them under the Docs/ folder (e.g. Docs/notes/idea.md). You may use any subfolders under Docs/ you want; parent folders are created automatically when you write a .md file.
-To create or overwrite a file, use workspace_write_markdown with a path ending in .md .
-When listing the project, start from relative_path \"\" for the root, or \"Docs\" for your document area."""
+
+IMPORTANT — Tool use: The runtime invokes tools via Ollama tool_calls. Do NOT paste JSON tool examples in your reply text. Do NOT print fake calls like {"name":"workspace_write_markdown",...}. When you need to read/write/list files, the tools run automatically when your model supports native tool calling — reply briefly and the system executes tools.
+
+For new notes and documents, put paths under Docs/ (e.g. Docs/sport/seance1/plan.md). Subfolders are created automatically when you write a .md file. Only .md files can be created; there is no separate \"create directory\" tool — directories appear when you save a file path.
+
+When listing, use relative_path \"\" for project root or \"Docs\" for the docs area."""
 
 
 ANALYST_SYSTEM = """You are an analytical sub-agent. Break down problems, consider edge cases, and give structured reasoning.
@@ -48,6 +51,49 @@ def _workspace_root_line(settings: Settings) -> str:
     except OSError:
         root = settings.workspace_root
     return f"Workspace root (sandbox): {root}"
+
+
+KNOWN_WORKSPACE_TOOLS = frozenset(
+    {"workspace_list", "workspace_read_file", "workspace_write_markdown"}
+)
+
+
+def _extract_balanced_json_objects(text: str) -> list[dict[str, Any]]:
+    """Parse top-level {...} JSON objects from text (handles models that print JSON instead of tool_calls)."""
+    out: list[dict[str, Any]] = []
+    depth = 0
+    start = -1
+    for i, c in enumerate(text):
+        if c == "{":
+            if depth == 0:
+                start = i
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0 and start >= 0:
+                chunk = text[start : i + 1]
+                try:
+                    data = json.loads(chunk)
+                    if isinstance(data, dict):
+                        out.append(data)
+                except json.JSONDecodeError:
+                    pass
+                start = -1
+    return out
+
+
+def _tool_calls_from_embedded_json(content: str) -> list[tuple[str, dict[str, Any]]]:
+    """When the model prints {\"name\":\"workspace_...\",\"arguments\":{...}} in prose, execute it."""
+    found: list[tuple[str, dict[str, Any]]] = []
+    for data in _extract_balanced_json_objects(content):
+        name = data.get("name")
+        if name not in KNOWN_WORKSPACE_TOOLS:
+            continue
+        args = data.get("arguments")
+        if not isinstance(args, dict):
+            args = {}
+        found.append((str(name), args))
+    return found
 
 
 def _parse_tool_calls(msg: dict[str, Any]) -> list[tuple[str, dict[str, Any]]]:
@@ -108,14 +154,25 @@ async def run_agent_with_tools(
             num_ctx=num_ctx,
             tools=OLLAMA_TOOLS,
         )
+        raw_content = msg.get("content") or ""
         tool_calls = _parse_tool_calls(msg)
-        assistant_msg: dict[str, Any] = {"role": "assistant", "content": msg.get("content") or ""}
+        used_embedded = False
+        if not tool_calls:
+            embedded = _tool_calls_from_embedded_json(raw_content)
+            if embedded:
+                tool_calls = embedded
+                used_embedded = True
+
+        assistant_msg: dict[str, Any] = {
+            "role": "assistant",
+            "content": "(Executing workspace tools…)" if used_embedded else raw_content,
+        }
         if msg.get("tool_calls"):
             assistant_msg["tool_calls"] = msg["tool_calls"]
         working.append(assistant_msg)
 
         raw_tc = msg.get("tool_calls") or []
-        if raw_tc and not tool_calls:
+        if raw_tc and not _parse_tool_calls(msg) and not used_embedded:
             working.append(
                 {
                     "role": "tool",
@@ -126,7 +183,7 @@ async def run_agent_with_tools(
             continue
 
         if not tool_calls:
-            text = (msg.get("content") or "").strip()
+            text = raw_content.strip()
             return text if text else "(No text response.)"
 
         for name, args in tool_calls:

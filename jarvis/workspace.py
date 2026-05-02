@@ -38,8 +38,17 @@ def resolve_under_root(root: Path, relative: str) -> Path:
     return candidate
 
 
+def normalize_workspace_relative(rel: str) -> str:
+    """Map leading docs/ to Docs/ so lowercase paths match the repo folder on disk."""
+    r = rel.strip().replace("\\", "/")
+    if len(r) >= 5 and r[:5].lower() == "docs/" and not r.startswith("Docs/"):
+        return "Docs/" + r[5:]
+    return r
+
+
 def list_workspace(root: Path, relative_dir: str = "", *, recursive: bool = False) -> str:
     """List files under relative_dir (default root). One level unless recursive."""
+    relative_dir = normalize_workspace_relative(relative_dir)
     base = resolve_under_root(root, relative_dir)
     if not base.exists():
         return json.dumps({"error": "path does not exist", "path": relative_dir})
@@ -81,7 +90,7 @@ def list_workspace(root: Path, relative_dir: str = "", *, recursive: bool = Fals
 
 
 def read_workspace_file(root: Path, relative_path: str) -> str:
-    path = resolve_under_root(root, relative_path)
+    path = resolve_under_root(root, normalize_workspace_relative(relative_path))
     if not path.is_file():
         return json.dumps({"error": "not a file or missing", "path": relative_path})
     size = path.stat().st_size
@@ -103,7 +112,7 @@ def write_workspace_markdown(root: Path, relative_path: str, content: str) -> st
         content = str(content)
     if len(content.encode("utf-8")) > WRITE_MAX_BYTES:
         return json.dumps({"error": "content too large", "max_bytes": WRITE_MAX_BYTES})
-    rel_norm = relative_path.strip().replace("\\", "/")
+    rel_norm = normalize_workspace_relative(relative_path)
     if not rel_norm.lower().endswith(".md"):
         return json.dumps({"error": "only .md files can be created or overwritten", "path": relative_path})
     path = resolve_under_root(root, rel_norm)
